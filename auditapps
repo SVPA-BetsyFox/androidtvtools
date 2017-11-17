@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+
+let prog = () => process.stdout.write(".");
+
+var execSync = require('child_process').execSync;
+
+let execute = function(command) {
+  return execSync(command).toString();
+};
+
+
+let adb = function(serial, command) {
+  return execSync(`adb -s ${serial} ${command}`).toString();
+};
+
+
+
+let get_devices = () => {
+  let raw = execute("adb devices -l").split("\n");
+  raw.shift();
+  raw = raw.filter(e => e.trim() != '');
+  raw = raw.map(e => {
+    e = e.split(/\s+/);
+    let id = e.shift();
+    let type = e.shift();
+    let data = {};
+    e.forEach(item => {
+      let [label, value] = item.split(":");
+      data[label] = value;
+    });
+    return {id: id, type: type, ...data};
+  });
+  return raw;
+}
+
+
+let get_ver = function(serial="NONE", package) {
+  prog();
+  let raw = adb(serial, `shell dumpsys package ${package} | grep versionName`).split("\n")[0];
+  return raw.slice(raw.indexOf("=") + 1).trim();
+}
+
+
+let get_apps = function(serial="NONE") {
+  let raw = execute(`adb -s ${serial} shell pm list packages -f`).split(/\r*\n/);
+  raw = raw.map(x => {
+    prog();
+    let package = x.slice(x.indexOf(":") + 1).split("=").pop();
+    let apk = x.slice(x.indexOf(":") + 1, x.lastIndexOf("="));
+    let version = get_ver(serial, package);
+    // return [apk, package];
+    // out["apk"] = x.slice(0, x.lastIndexOf("="));
+    return {apk: apk, package: package, version: version};
+  });
+  // raw = raw.map(x => {
+  //   let out = {};
+  //   out[x[1]] = x[0];
+  //   return out;
+  // });
+  return raw;
+  // adb shell 'pm list packages -f'
+}
+
+// console.log(execute("adb devices"));
+
+// execute
+// console.log(devices);
+
+let devices = get_devices();
+let apps = get_apps(devices[0].id);
+apps_json = JSON.stringify(apps, null, 2);
+console.log(apps_json);
+// apps.forEach(app => {
+//   console.log(app.package, app.version);
+// })
+
+ 
+
+// let apps = get_apps(), ver = 0;
+
+// for (let app in apps) {
+//   ver = get_app_ver();
+//   console.log(`${app} - ${ver}`);
+// }
