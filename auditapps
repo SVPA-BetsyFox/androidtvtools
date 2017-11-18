@@ -48,37 +48,22 @@ let get_apps = function(serial="NONE") {
     let package = x.slice(x.indexOf(":") + 1).split("=").pop();
     let apk = x.slice(x.indexOf(":") + 1, x.lastIndexOf("="));
     let version = get_ver(serial, package);
-    // return [apk, package];
-    // out["apk"] = x.slice(0, x.lastIndexOf("="));
     return {apk: apk, package: package, version: version};
   });
-  // raw = raw.map(x => {
-  //   let out = {};
-  //   out[x[1]] = x[0];
-  //   return out;
-  // });
   return raw;
-  // adb shell 'pm list packages -f'
 }
 
-// console.log(execute("adb devices"));
 
-// execute
-// console.log(devices);
+let report = {};
 
 let devices = get_devices();
-let apps = get_apps(devices[0].id);
-apps_json = JSON.stringify(apps, null, 2);
-console.log(apps_json);
-// apps.forEach(app => {
-//   console.log(app.package, app.version);
-// })
 
- 
 
-// let apps = get_apps(), ver = 0;
-
-// for (let app in apps) {
-//   ver = get_app_ver();
-//   console.log(`${app} - ${ver}`);
-// }
+devices.forEach(device => {
+  report[device.id] = {};
+  report[device.id]["device"] = device;
+  report[device.id]["apps"] = get_apps(device.id);
+})
+// let apps = get_apps(devices[0].id);
+report_json = JSON.stringify(report, null, 2);
+console.log(report_json);
