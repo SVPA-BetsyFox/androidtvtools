@@ -1,16 +1,60 @@
 #!/usr/bin/env node
+const chalk = require('chalk');
 
 let prog = () => process.stdout.write(".");
 
-var execSync = require('child_process').execSync;
 
-let execute = function(command) {
-  return execSync(command).toString();
+let progress = (count, i, note="") => {
+  let cols = process.stdout.columns;
+  process.stdout.write(`\r[${i}/${count}] ${note}`.padEnd(cols))
 };
 
 
+let progress_bar = (count, i, size=25, note="") => {
+  let cols = process.stdout.columns;
+  let bar = Math.floor((count/i) * (size - 1));
+  process.stdout.write(`\r${chalk.greenBright.bgGreen(" ".repeat(bar) + "▓") + chalk.bgBlue(" ".repeat(size-bar))} (${percent(count, i)}%) ${note}`.padEnd(cols));
+};
+
+
+let percent = (count, i) => {
+  return Math.floor((count / i) * 100);
+};
+
+let execSync = require('child_process').execSync;
+
+
 let adb = function(serial, command) {
-  return execSync(`adb -s ${serial} ${command}`).toString();
+  let out = execute(`adb -s ${serial} ${command}`);
+  if (out) {
+    return out;
+  } else {
+    console.log(`Connection to ${serial} lost, reconnecting...`);
+    if (connect(serial))
+      return adb(serial, command);
+    else {
+      console.log("Failed to connect!");
+      return false;
+    }
+  }
+};
+
+
+let connect = function(serial, port) {
+  if (port) serial = `${serial}:${port}`;
+  return execute(`adb connect ${serial}`);
+};
+
+
+let execute = function(cmd) {
+  // console.log(`#### ===> EXECUTING "${cmd}"`);
+  let out = false;
+  try {
+    out = execSync(cmd).toString();
+  } catch (err) {
+    console.log(err.message);
+  }
+  return out;
 };
 
 
@@ -19,7 +63,9 @@ let get_devices = () => {
   let raw = execute("adb devices -l").split("\n");
   raw.shift();
   raw = raw.filter(e => e.trim() != '');
+  let count = raw.length, i = 0;
   raw = raw.map(e => {
+    progress(++i, count);
     e = e.split(/\s+/);
     let id = e.shift();
     let type = e.shift();
@@ -31,27 +77,27 @@ let get_devices = () => {
     return {id: id, type: type, ...data};
   });
   return raw;
-}
+};
 
 
 let get_ver = function(serial="NONE", package) {
-  prog();
   let raw = adb(serial, `shell dumpsys package ${package} | grep versionName`).split("\n")[0];
   return raw.slice(raw.indexOf("=") + 1).trim();
-}
+};
 
 
 let get_apps = function(serial="NONE") {
   let raw = execute(`adb -s ${serial} shell pm list packages -f`).split(/\r*\n/);
+  let count = raw.length, i = 0;
   raw = raw.map(x => {
-    prog();
     let package = x.slice(x.indexOf(":") + 1).split("=").pop();
     let apk = x.slice(x.indexOf(":") + 1, x.lastIndexOf("="));
     let version = get_ver(serial, package);
+    progress_bar(++i, count, 25, package);
     return {apk: apk, package: package, version: version};
   });
   return raw;
-}
+};
 
 
 let report = {};
