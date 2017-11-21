@@ -1,5 +1,28 @@
 #!/usr/bin/env node
-const chalk = require('chalk');
+let execSync = require('child_process').execSync;
+let chalk = require('chalk');
+
+let show_cursor = (show=true) => {
+  if (show) process.stdout.write('\x1B[?25h\r');
+  else process.stdout.write('\x1B[?25l\r');
+}
+
+let error = (...args) => {
+  console.log(chalk.redBright(args));
+}
+
+
+let init = () => {
+  show_cursor(false);
+  let args = [...process.argv];
+  args.shift();
+  args.shift();
+  args.forEach(arg => {
+    console.log(`Connecting to ${arg}`);
+    if (!connect(arg)) error(`Unable to connect to ${arg}.`);
+  });
+}
+
 
 let prog = () => process.stdout.write(".");
 
@@ -12,8 +35,8 @@ let progress = (count, i, note="") => {
 
 let progress_bar = (count, i, size=25, note="") => {
   let cols = process.stdout.columns;
-  let bar = Math.floor((count/i) * (size - 1));
-  process.stdout.write(`\r${chalk.greenBright.bgGreen(" ".repeat(bar) + "▓") + chalk.bgBlue(" ".repeat(size-bar))} (${percent(count, i)}%) ${note}`.padEnd(cols));
+  let bar = Math.floor((count/i) * (size));
+  process.stderr.write(`\r${chalk.greenBright.bgGreen(" ".repeat(bar) + "▓") + chalk.bgBlue(" ".repeat(size-bar))} (${percent(count, i)}%) ${note}`.padEnd(cols));
 };
 
 
@@ -21,7 +44,6 @@ let percent = (count, i) => {
   return Math.floor((count / i) * 100);
 };
 
-let execSync = require('child_process').execSync;
 
 
 let adb = function(serial, command) {
@@ -29,11 +51,11 @@ let adb = function(serial, command) {
   if (out) {
     return out;
   } else {
-    console.log(`Connection to ${serial} lost, reconnecting...`);
+    error(`Connection to ${serial} lost, reconnecting...`);
     if (connect(serial))
       return adb(serial, command);
     else {
-      console.log("Failed to connect!");
+      error("Failed to connect!");
       return false;
     }
   }
@@ -42,7 +64,8 @@ let adb = function(serial, command) {
 
 let connect = function(serial, port) {
   if (port) serial = `${serial}:${port}`;
-  return execute(`adb connect ${serial}`);
+  let status = execute(`adb connect ${serial}`);
+  return !(status.indexOf("unable") > -1);
 };
 
 
@@ -52,7 +75,7 @@ let execute = function(cmd) {
   try {
     out = execSync(cmd).toString();
   } catch (err) {
-    console.log(err.message);
+    console.log(chalk.red(err.message));
   }
   return out;
 };
@@ -80,36 +103,58 @@ let get_devices = () => {
 };
 
 
-let get_ver = function(serial="NONE", package) {
+let get_package_ver = function(serial="NONE", package) {
+  console.log(`GETTING VERSION INFO FOR PACKAGE: ${package}`);
   let raw = adb(serial, `shell dumpsys package ${package} | grep versionName`).split("\n")[0];
   return raw.slice(raw.indexOf("=") + 1).trim();
 };
 
 
+let get_active_app = function(serial="NONE") {
+  let regex = /(?:\{)(\w+)\s(\w+)\s(.+)(?:\})/;
+  let rawCurrentFocus = adb(serial, `shell dumpsys window windows | grep -E mCurrentFocus`);
+  let [package, activity] = regex.exec(rawCurrentFocus)[3].split("/");
+  return { appPackage: package, appActivity: activity };
+};
+
+
+
 let get_apps = function(serial="NONE") {
   let raw = execute(`adb -s ${serial} shell pm list packages -f`).split(/\r*\n/);
-  let count = raw.length, i = 0;
-  raw = raw.map(x => {
+  let count = raw.length, i = 1;
+
+  //skip blanks, grab apk, package name, and version for each hit
+  raw = raw.filter(x => x !== "").sort().map(x => {
     let package = x.slice(x.indexOf(":") + 1).split("=").pop();
     let apk = x.slice(x.indexOf(":") + 1, x.lastIndexOf("="));
-    let version = get_ver(serial, package);
-    progress_bar(++i, count, 25, package);
-    return {apk: apk, package: package, version: version};
+    let version = get_package_ver(serial, package);
+    progress_bar(++i, count, 33, package);
+    return { apk: apk, package: package, version: version };
   });
+  progress_bar(1, 1, 33, "Processing report...");
   return raw;
 };
 
 
 let report = {};
+init();
 
 let devices = get_devices();
 
+if (devices.length < 1)  {
+  error("Unable to connect to any devices.");
+  process.exit(1);
+}
 
 devices.forEach(device => {
+  console.log();
+  console.log(`Enumerating apps on ${device.id}...`);
   report[device.id] = {};
+  device["activeApp"] = get_active_app(device.id);
   report[device.id]["device"] = device;
   report[device.id]["apps"] = get_apps(device.id);
 })
-// let apps = get_apps(devices[0].id);
+
 report_json = JSON.stringify(report, null, 2);
 console.log(report_json);
+process.stdout.write('\x1B[?25h\r');
