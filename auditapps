@@ -104,7 +104,6 @@ let get_devices = () => {
 
 
 let get_package_ver = function(serial="NONE", package) {
-  console.log(`GETTING VERSION INFO FOR PACKAGE: ${package}`);
   let raw = adb(serial, `shell dumpsys package ${package} | grep versionName`).split("\n")[0];
   return raw.slice(raw.indexOf("=") + 1).trim();
 };

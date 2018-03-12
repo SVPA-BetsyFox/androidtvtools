@@ -17,7 +17,6 @@
   },
   "homepage": "https://github.com/SVPA-BetsyFox/androidtvtools#readme",
   "dependencies": {
-    "chalk": "^2.3.0",
-    "webdriverio": "^4.9.9"
+    "chalk": "^2.3.0"
   }
 }
