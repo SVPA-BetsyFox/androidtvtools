@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Betsy's Artisinal Android TV Tools, Yes</title>
+  <style>
+    ul.device-list {
+      list-style-type: none;
+    }
+
+    ul.device-list > li {
+      cursor: pointer;
+      border: 1px solid rgba(255, 0, 0, 0.0);;
+    }
+
+    ul.device-list > li:hover {
+      display: inline-block;
+      border: 1px solid rgba(255, 0, 0, 0.3);;
+    }
+  
+
+    .device-icon {
+      width: 24px;
+      height: 24px;
+      vertical-align: middle;
+    }
+  </style>
+  <script src="js/vue.js"></script>
+  <script type="text/javascript">
+    window.onload = function () {
+      var app4 = new Vue({
+        el: '#device-list',
+        data: {
+          selected: '',
+          devices: [
+            { ip: '127.0.0.1', name: 'the most local host, ever', type: 'tv' },
+            { ip: '127.0.0.1', name: 'the most local host, ever', type: 'board' },
+          ]
+        }
+      });
+    }
+
+  </script>
+</head>
+<body>
+  <div id="device-list">
+    <ul class="device-list">
+      <li v-for="device in devices">
+        <img :src="img/{{device.type}}.png" alt="" class="device-icon">
+        {{ device.name }}: {{ device.ip }}
+      </li>
+    </ul>
+  </div>
+</body>
+</html>

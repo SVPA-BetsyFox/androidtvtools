@@ -1,9 +1,10 @@
 {
-  "name": "androidtvtools",
+  "name": "BAATTY",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "electron .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -17,6 +18,7 @@
   },
   "homepage": "https://github.com/SVPA-BetsyFox/androidtvtools#readme",
   "dependencies": {
-    "chalk": "^2.3.0"
+    "chalk": "^2.3.0",
+    "electron": "^1.8.3"
   }
 }
