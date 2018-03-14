@@ -1,0 +1,49 @@
+    * {
+      font-family: sans-serif;
+    }
+
+    h1 {
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+
+    ul.device-list {
+      padding: 0;
+      list-style-type: none;
+      display: inline-block;
+      background-color: rgba(128, 120, 255, 0.5);
+    }
+
+    ul.device-list > li {
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid rgba(255, 0, 0, 0.0);
+      display: block;
+      padding: 0 5px 0 0;
+      margin: 2px;
+    }
+
+    span.ip {
+      font-family: monospace;
+    }
+
+    ul.device-list > li:hover {
+      box-shadow: inset 0 0 10px rgba(20, 128, 255, 1.0);
+      mix-blend-mode: screen;
+    }
+
+    .selected {
+      color: #f00;
+      background-color: #fff;
+      mix-blend-mode: screen;
+    }
+  
+
+    .device-icon {
+      width: 24px;
+      height: 24px;
+      vertical-align: middle;
+      border-radius: 3px;
+      background-color: #fff;
+    }

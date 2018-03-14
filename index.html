@@ -3,39 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <title>Betsy's Artisinal Android TV Tools, Yes</title>
-  <style>
-    ul.device-list {
-      list-style-type: none;
-    }
-
-    ul.device-list > li {
-      cursor: pointer;
-      border: 1px solid rgba(255, 0, 0, 0.0);;
-    }
-
-    ul.device-list > li:hover {
-      display: inline-block;
-      border: 1px solid rgba(255, 0, 0, 0.3);;
-    }
-  
-
-    .device-icon {
-      width: 24px;
-      height: 24px;
-      vertical-align: middle;
-    }
-  </style>
+  <link rel="stylesheet" type="text/css" href="baatty.css">
   <script src="js/vue.js"></script>
   <script type="text/javascript">
     window.onload = function () {
       var app4 = new Vue({
         el: '#device-list',
         data: {
-          selected: '',
           devices: [
-            { ip: '127.0.0.1', name: 'the most local host, ever', type: 'tv' },
-            { ip: '127.0.0.1', name: 'the most local host, ever', type: 'board' },
-          ]
+            { ip: '127.0.0.1', name: 'the localest of hosts', type: 'tv', selected: false },
+            { ip: '127.0.0.2', name: 'a screenless board', type: 'board', selected: true },
+            { ip: '127.0.0.3', name: 'the most local host, ever', type: 'board', selected: false },
+            { ip: '127.0.0.4', name: '', type: 'board', selected: false },
+          ],
+          new_device_name: "",
+          new_device_ip: "",
+        },
+        methods: {
+          add_item: function() {
+            this.new_device_ip = this.new_device_ip.trim();
+            this.new_device_name = this.new_device_name.trim();
+            if (this.new_device_ip === "") return;
+            const new_device = { ip: this.new_device_ip, name: this.new_device_name, type: "board", selected: false };
+            this.devices.push(new_device);
+            this.new_device_name = "";
+            this.new_device_ip = "";
+          }
         }
       });
     }
@@ -45,9 +38,13 @@
 <body>
   <div id="device-list">
     <ul class="device-list">
-      <li v-for="device in devices">
-        <img :src="img/{{device.type}}.png" alt="" class="device-icon">
-        {{ device.name }}: {{ device.ip }}
+      <li><h1>devices</h1></li>
+      <li><input type="text" v-model="new_device_ip"><input type="text" v-model="new_device_name"><button @click="add_item">add</button>
+      </li>
+      <li v-for="device in devices" :class="{ selected: device.selected }" v-on:click="device.selected = !device.selected">
+        <img :src="'img/' + device.type + '.png'" :alt="device.type" class="device-icon">
+        <span v-if="device.name === ''">{{ device.ip }}</span>
+        <span v-else>{{ device.name }} <span class="ip">[{{ device.ip }}]</span></span>
       </li>
     </ul>
   </div>
