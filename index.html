@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Betsy's Artisinal Android TV Tools, Yes</title>
+  <title>Betsy's Android TV Tools, Yes</title>
   <link rel="stylesheet" type="text/css" href="baatty.css">
   <script src="js/vue.js"></script>
   <script type="text/javascript">
     window.onload = function () {
-      var app4 = new Vue({
+      var device_list = new Vue({
         el: '#device-list',
         data: {
           devices: [
@@ -38,9 +38,8 @@
 <body>
   <div id="device-list">
     <ul class="device-list">
-      <li><h1>devices</h1></li>
-      <li><input type="text" v-model="new_device_ip"><input type="text" v-model="new_device_name"><button @click="add_item">add</button>
-      </li>
+      <h1>devices</h1>
+      <input type="text" v-model="new_device_ip" id="new_device_ip" placeholder="add ip to device list" v-on:keyup.enter="add_item">
       <li v-for="device in devices" :class="{ selected: device.selected }" v-on:click="device.selected = !device.selected">
         <img :src="'img/' + device.type + '.png'" :alt="device.type" class="device-icon">
         <span v-if="device.name === ''">{{ device.ip }}</span>

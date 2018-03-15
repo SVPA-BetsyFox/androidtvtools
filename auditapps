@@ -11,12 +11,21 @@ let error = (...args) => {
   console.log(chalk.redBright(args));
 }
 
+let print_usage = () => {
+  console.log("Usage:\n./auditapps [ip address or hostname of device] [ip address or hostname of another device] [...]");
+}
+
 
 let init = () => {
   show_cursor(false);
   let args = [...process.argv];
   args.shift();
   args.shift();
+  if (args.length < 1) {
+    print_usage();
+    show_cursor(true);
+    process.exit();
+  }
   args.forEach(arg => {
     console.log(`Connecting to ${arg}`);
     if (!connect(arg)) error(`Unable to connect to ${arg}.`);
@@ -109,6 +118,11 @@ let get_package_ver = function(serial="NONE", package) {
 };
 
 
+let get_package_info = function(serial="NONE", package) {
+  return adb(serial, `shell dumpsys package ${package}`);
+};
+
+
 let get_active_app = function(serial="NONE") {
   let regex = /(?:\{)(\w+)\s(\w+)\s(.+)(?:\})/;
   let rawCurrentFocus = adb(serial, `shell dumpsys window windows | grep -E mCurrentFocus`);
@@ -127,8 +141,9 @@ let get_apps = function(serial="NONE") {
     let package = x.slice(x.indexOf(":") + 1).split("=").pop();
     let apk = x.slice(x.indexOf(":") + 1, x.lastIndexOf("="));
     let version = get_package_ver(serial, package);
+    let rawinfo = get_package_info(serial, package);
     progress_bar(++i, count, 33, package);
-    return { apk: apk, package: package, version: version };
+    return { apk: apk, package: package, version: version, rawinfo: rawinfo };
   });
   progress_bar(1, 1, 33, "Processing report...");
   return raw;
