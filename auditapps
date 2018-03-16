@@ -138,12 +138,12 @@ let get_apps = function(serial="NONE") {
 
   //skip blanks, grab apk, package name, and version for each hit
   raw = raw.filter(x => x !== "").sort().map(x => {
-    let package = x.slice(x.indexOf(":") + 1).split("=").pop();
-    let apk = x.slice(x.indexOf(":") + 1, x.lastIndexOf("="));
-    let version = get_package_ver(serial, package);
-    let rawinfo = get_package_info(serial, package);
-    progress_bar(++i, count, 33, package);
-    return { apk: apk, package: package, version: version, rawinfo: rawinfo };
+    x = x.replace("package:", "");
+    info = x.split("=");
+    let version = get_package_ver(serial, info[1]);
+    let rawinfo = get_package_info(serial, info[1]);
+    progress_bar(++i, count, 33, info[1]);
+    return { apk: info[0], package: info[1], version: version, rawinfo: rawinfo };
   });
   progress_bar(1, 1, 33, "Processing report...");
   return raw;

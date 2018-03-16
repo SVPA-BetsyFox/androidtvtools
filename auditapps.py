@@ -76,6 +76,13 @@ def get_active_app(serial="NONE"):
   return { appPackage: package, appActivity: activity }
 
 
+def _app_info(x):
+  x = x.replace("package:", "")
+  info = x.split("=")
+  version = get_package_ver(serial, info[1])
+  rawinfo = get_package_info(serial, info[1])
+  return obj(**{ "apk": info[0], "package": info[1], "version": version, "rawinfo": rawinfo })
+
 
 def get_apps(serial="NONE"):
   raw = execute(f'adb -s {serial} shell pm list packages -f').split(/\r*\n/)
@@ -84,7 +91,7 @@ def get_apps(serial="NONE"):
   # skip blanks, grab apk, package name, and version for each hit
   raw = filter(lambda x: x != "", raw)
   raw.sort()
-  .map(x => {
+  map(lambda x: 
     package = x.slice(x.indexOf(":") + 1).split("=").pop()
     apk = x.slice(x.indexOf(":") + 1, x.lastIndexOf("="))
     version = get_package_ver(serial, package)
