@@ -4,8 +4,10 @@
   <meta charset="UTF-8">
   <title>Betsy's Android TV Tools, Yes</title>
   <link rel="stylesheet" type="text/css" href="baatty.css">
+  <script src="js/localStorage.js"></script>
   <script src="js/vue.js"></script>
   <script type="text/javascript">
+    let storage = window.localStorage;
     window.onload = function () {
       var device_list = new Vue({
         el: '#device-list',
