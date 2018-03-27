@@ -117,6 +117,11 @@ def get_devices():
   raw = list(map(lambda x: x.split("\t")[0], raw))
   return raw
 
+def open_app(serial, package):
+  raw = execute(f'adb -s {serial} shell monkey -p {package} 1'.split(" "))
+
+# adb shell monkey -p your.app.package.name 1
+
 
 def dummy_report(lol):
   serial = "dummy"
@@ -153,15 +158,15 @@ def gen_report(ip):
       i += 1
       report[device][k] = props.get(v, None)
     update_progress(100, "Done!")
-    # report[device]['apps'] = get_apps(device)
+    report[device]['apps'] = get_apps(device)
     serial = report[device]['serialno']
-    # report[serial] = report.pop(device)
-    # out = json.dumps(report, indent=4)
+    report[serial] = report.pop(device)
+    out = json.dumps(report, indent=4)
     # print(out)
-    last_report = load_report("report.json")
-    print(last_report)
-    # save_report("report.json", out)
-    for app_i, app in enumerate(last_report[serial]['apps']):
+    # last_report = load_report("report.json")
+    # print(last_report)
+    save_report("report.json", out)
+    for app_i, app in enumerate(report[serial]['apps']):
       print(app)
       add_app_entry(report[serial]['apps'][app], app_i)
 
@@ -197,14 +202,14 @@ app.setSticky("new")
 
 app.addLabelEntry("ip address", row=0, column=0)
 app.setEntry("ip address", "172.30.7.97")
-app.addButton("Yoink!", lambda: threadulate(dummy_report(app.getEntry("ip address"))), row=0, column=1)
-# app.addButton("Yoink!", lambda: threadulate(gen_report(app.getEntry("ip address"))), row=0, column=1)
+# app.addButton("Yoink!", lambda: threadulate(dummy_report(app.getEntry("ip address"))), row=0, column=1)
+app.addButton("Yoink!", lambda: threadulate(gen_report(app.getEntry("ip address"))), row=0, column=1)
 # app.setSticky("news")
 try:
   app.setSticky("news")
   app.setStretch("both")
 
-  app.startScrollPane("app_report", colspan=2, rowspan=2)
+  app.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
 
   app.setBg("#beeeef")
   app.addLabel("--------- APPS --------")
@@ -214,7 +219,7 @@ except Exception as e:
 
 
 app.setSticky("sew")
-app.addMeter("progress", colspan=2)
+app.addMeter("progress", row=2, colspan=2)
 app.setMeterFill("progress", "blue")
 app.setMeterBg("progress", "black")
 app.setMeterFg("progress", "gold")
