@@ -1,4 +1,4 @@
-import subprocess, re, time, codecs, sys
+import subprocess, re, time, codecs, sys, json
 DEBUG = False
 
 sys.stdout = codecs.getwriter('utf8')(sys.stdout.buffer)
@@ -11,6 +11,17 @@ prop_mapping = {
   'ipaddress': 'dhcp.wlan0.ipaddress',
   'panelsize': 'ro.svp.panel_inch'
 }
+
+def load_report(filename):
+  f = open(filename, 'r')
+  json.loads(f.read())
+  f.close()
+
+def save_report(filename, report):
+  f = open(filename, 'w')
+  f.write(report)
+  f.close()
+
 
 def execute(cmd):
   if DEBUG:
@@ -41,18 +52,20 @@ def process_app(serial, app_data, count):
   return { "apk": info[0], "package": info[1], "version": version }
 
 
+
 def get_apps(serial):
   raw = execute(f'adb -s {serial} shell pm list packages -f'.split(" ")).split("\n")
   count = len(raw)
-  raw = filter(lambda x: x != "", raw)
-  raw = list(map(lambda x: process_app(serial, x, count), enumerate(raw)))
-  print(raw)
-  return raw
+  out = {}
+  apps = filter(lambda x: x != "", raw)
+  apps = list(map(lambda x: process_app(serial, x, count), enumerate(apps)))
+  for app in apps:
+    out[app["package"]] = { "apk": app["apk"], "package": app["package"], "version": app["version"] }
+  return out
 
 
 
 def update_progress(percent, msg=None):
-  print("PROGESS BAAAAR " + msg)
   app.queueFunction(app.setMeter, "progress", percent, msg + " (" + "%.3g" % round(percent) + "%)")
 
 
@@ -103,8 +116,7 @@ def get_devices():
   return raw
 
 
-def populate():
-  ip = app.getEntry("ip address")
+def gen_report(ip):
   connect(ip)
   devices = get_devices()
   report = {}
@@ -128,32 +140,61 @@ def populate():
     for k, v in prop_mapping.items():
       i += 1
       report[device][k] = props.get(v, None)
-    get_apps(device)
+    report[device]['apps'] = get_apps(device)
     update_progress(100, "Done!")
-    report[device]["model"] = props["ro.svp.modelname"]
-    print(report)
+    # report[device]["model"] = props["ro.svp.modelname"]
+    # print(report) ## TODO: draw actual report
+    serial = report[device]['serialno']
+    report[serial] = report.pop(device)
+    out = json.dumps(report, indent=4)
+    # print(out)
+    last_report = load_report("report.json")
+    save_report("report.json", out)
+    for app_i, app in enumerate(report[serial]['apps']):
+      # print(app)
+      add_app_entry(report[serial]['apps'][app], app_i)
 
-def threadulate():
-  app.thread(populate)
+
+def add_app_entry(app_data={}, row=0):
+  if type(row) is not int:
+    print("zomg row is not a fucking int for some fucking reason fffffuuuudsfglkdfgn\n" + str(type(row)) + " " + str(row))
+  print("row is a " + str(type(row)) + " whose value is '" + str(row) + "'")
+  app.openScrollPane("app_report")
+  app.setSticky("ew")
+  app.addLabel("name_"+app_data["package"], row=row, column=0)
+  app.addLabel("ver_"+app_data["version"], row=row, column=1)
+  app.addButton("open_"+app_data["version"], None, row=row, column=2)
+  app.stopScrollPane()
+
+
+def threadulate(func):
+  app.thread(func)
+
 
 # import the library
 from appJar import gui
 
-app = gui("Betsy's Artisanal Android TV Tools, Yes!", "500x200")
-app.setIcon('./baatty.gif')
-app.addLabelEntry("ip address")
-app.setEntry("ip address", "172.30.7.97")
-
-app.setLocation("CENTER")
+app = gui("Betsy's Artisanal Android TV Tools, Yes!", "700x500")
 app.setFont(15)
-app.addMeter("progress")
+app.setLocation("CENTER")
+app.setIcon('./baatty.gif')
+
+app.setSticky("new")
+
+app.addLabelEntry("ip address", row=0, column=0)
+app.setEntry("ip address", "172.30.7.97")
+app.addButton("Yoink!", lambda: threadulate(gen_report(app.getEntry("ip address"))), row=0, column=1)
+app.setSticky("news")
+app.startScrollPane("app_report")
+app.stopScrollPane()
+
+app.setSticky("sew")
+app.addMeter("progress", colspan=2)
 app.setMeterFill("progress", "blue")
 app.setMeterBg("progress", "black")
 app.setMeterFg("progress", "gold")
-# app.setFont(18)
 
 
 
-app.addButton("Yoink!", threadulate)
 app.go()
 

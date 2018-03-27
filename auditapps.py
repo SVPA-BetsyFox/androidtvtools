@@ -1,7 +1,7 @@
-import subprocess, re, time, codecs, sys, json
+import subprocess, re, time, codecs, sys, json, hashlib
 DEBUG = False
 
-sys.stdout = codecs.getwriter('utf8')(sys.stdout.buffer)
+# sys.stdout = codecs.getwriter('utf8')(sys.stdout.buffer)
 
 prop_mapping = {
   'serialno': 'ro.serialno',
@@ -14,8 +14,9 @@ prop_mapping = {
 
 def load_report(filename):
   f = open(filename, 'r')
-  json.loads(f.read())
+  s = f.read()
   f.close()
+  return json.loads(s)
 
 def save_report(filename, report):
   f = open(filename, 'w')
@@ -66,7 +67,8 @@ def get_apps(serial):
 
 
 def update_progress(percent, msg=None):
-  app.queueFunction(app.setMeter, "progress", percent, msg + " (" + "%.3g" % round(percent) + "%)")
+
+  app.queueFunction(app.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
 
 
 
@@ -116,6 +118,16 @@ def get_devices():
   return raw
 
 
+def dummy_report(lol):
+  serial = "dummy"
+  report = {}
+  report[serial] = {}
+  last_report = load_report("report.json")
+  print(last_report)
+  for app_i, app in enumerate(last_report[serial]['apps']):
+    add_app_entry(last_report[serial]['apps'][app], app_i)
+
+
 def gen_report(ip):
   connect(ip)
   devices = get_devices()
@@ -140,32 +152,33 @@ def gen_report(ip):
     for k, v in prop_mapping.items():
       i += 1
       report[device][k] = props.get(v, None)
-    report[device]['apps'] = get_apps(device)
     update_progress(100, "Done!")
-    # report[device]["model"] = props["ro.svp.modelname"]
-    # print(report) ## TODO: draw actual report
+    # report[device]['apps'] = get_apps(device)
     serial = report[device]['serialno']
-    report[serial] = report.pop(device)
-    out = json.dumps(report, indent=4)
+    # report[serial] = report.pop(device)
+    # out = json.dumps(report, indent=4)
     # print(out)
     last_report = load_report("report.json")
-    save_report("report.json", out)
-    for app_i, app in enumerate(report[serial]['apps']):
-      # print(app)
+    print(last_report)
+    # save_report("report.json", out)
+    for app_i, app in enumerate(last_report[serial]['apps']):
+      print(app)
       add_app_entry(report[serial]['apps'][app], app_i)
+
+def clean_string(s):
+  return re.sub("[^a-zA-Z0-9.-_/]", "", s)
 
 
 def add_app_entry(app_data={}, row=0):
-  if type(row) is not int:
-    print("zomg row is not a fucking int for some fucking reason fffffuuuudsfglkdfgn\n" + str(type(row)) + " " + str(row))
-  print("row is a " + str(type(row)) + " whose value is '" + str(row) + "'")
+  package = clean_string(app_data["package"])
+  version = clean_string(app_data["version"])
+  apk = clean_string(app_data["apk"])
   app.openScrollPane("app_report")
   app.setSticky("ew")
-  app.addLabel("name_"+app_data["package"], row=row, column=0)
-  app.addLabel("ver_"+app_data["version"], row=row, column=1)
-  app.addButton("open_"+app_data["version"], None, row=row, column=2)
+  app.addLabel(str(row)+"nom_"+package, package, row=row, column=0)
+  app.addLabel(str(row)+"ver_"+package, version, row=row, column=1)
+  app.addNamedButton("open" + str(row), "open_"+str(row), None, row=row, column=2)
   app.stopScrollPane()
-
 
 def threadulate(func):
   app.thread(func)
@@ -174,7 +187,8 @@ def threadulate(func):
 # import the library
 from appJar import gui
 
-app = gui("Betsy's Artisanal Android TV Tools, Yes!", "700x500")
+app = gui("Betsy's Artisanal Android TV Tools, Yes!", "700x200")
+app.setStretch("column")
 app.setFont(15)
 app.setLocation("CENTER")
 app.setIcon('./baatty.gif')
@@ -183,10 +197,21 @@ app.setSticky("new")
 
 app.addLabelEntry("ip address", row=0, column=0)
 app.setEntry("ip address", "172.30.7.97")
-app.addButton("Yoink!", lambda: threadulate(gen_report(app.getEntry("ip address"))), row=0, column=1)
-app.setSticky("news")
-app.startScrollPane("app_report")
-app.stopScrollPane()
+app.addButton("Yoink!", lambda: threadulate(dummy_report(app.getEntry("ip address"))), row=0, column=1)
+# app.addButton("Yoink!", lambda: threadulate(gen_report(app.getEntry("ip address"))), row=0, column=1)
+# app.setSticky("news")
+try:
+  app.setSticky("news")
+  app.setStretch("both")
+
+  app.startScrollPane("app_report", colspan=2, rowspan=2)
+
+  app.setBg("#beeeef")
+  app.addLabel("--------- APPS --------")
+  app.stopScrollPane()
+except Exception as e:
+  pass # we need a place to put our report, but leaving a container empty throws a warning
+
 
 app.setSticky("sew")
 app.addMeter("progress", colspan=2)
@@ -195,6 +220,9 @@ app.setMeterBg("progress", "black")
 app.setMeterFg("progress", "gold")
 
 
+try:
+  app.go()
+except Exception as e:
+  pass
 
-app.go()
 
