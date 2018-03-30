@@ -1,7 +1,13 @@
-import subprocess, re, time, codecs, sys, json, hashlib
-DEBUG = False
+import subprocess, re, time, codecs, sys, json, hashlib, inspect, random, functools
+import urllib.request
+import ssl
 
-# sys.stdout = codecs.getwriter('utf8')(sys.stdout.buffer)
+ssl._create_default_https_context = ssl._create_unverified_context
+DEBUG = False
+DUMMY = False
+# DUMMY = True
+
+sys.stdout = codecs.getwriter('utf8')(sys.stdout.buffer)
 
 prop_mapping = {
   'serialno': 'ro.serialno',
@@ -12,22 +18,51 @@ prop_mapping = {
   'panelsize': 'ro.svp.panel_inch'
 }
 
+
+# def get_app_name(package):
+#   filename = "package_names.json"
+#   names = load_report(filename) or {}
+#   if package in names:
+#     return names[package]
+#   else:
+#     try:
+#       contents = urllib.request.urlopen(f'https://play.google.com/store/apps/details?id={package}').read().decode("utf-8")
+#       title = re.search("<title.*?>(?P<name>.+?) - .+?</title>", contents).group("name")
+#     except Exception as e:
+#       title = False
+#   names[package] = title
+#   save_report(filename, names)
+#   return title
+
+
 def load_report(filename):
-  f = open(filename, 'r')
-  s = f.read()
-  f.close()
-  return json.loads(s)
+  try:
+    f = open(filename, 'r')
+    s = f.read()
+    f.close()
+    return json.loads(s)
+  except Exception as e:
+    return False
+
 
 def save_report(filename, report):
   f = open(filename, 'w')
-  f.write(report)
+  f.write(json.dumps(report))
   f.close()
+
+def debug(msg):
+  if DEBUG:
+    [frame, filename, lineno, caller, context, index] = inspect.stack()[2]
+    print(f'=== from {caller} on {lineno} '.ljust(74, '=') + '----->')
+    print(msg)
+    print('----->'.rjust(80, '='))
+  # if DEBUG:
+  #   caller = inspect.stack()[1][3]
+  #   print(f'CALLED DEBUG: {msg}')
 
 
 def execute(cmd):
-  if DEBUG:
-    # pass
-    print("#### ===> EXECUTING " + " ".join(cmd))
+  debug(cmd)
   out = subprocess.check_output(cmd)
   return out.decode('utf-8')
 
@@ -44,13 +79,16 @@ def get_package_ver(serial, package):
 
 
 def process_app(serial, app_data, count):
+  print("called process app for serial " + serial)
   i = app_data[0]
   app_data = app_data[1].strip()
   app_data = app_data.replace("package:", "")
   info = app_data.split("=")
-  update_progress((i / count) * 100, f'Processing app: {info[1]}... ')
   version = get_package_ver(serial, info[1])
-  return { "apk": info[0], "package": info[1], "version": version }
+  # can_open = random.choice([True, False])
+  out = { "apk": info[0], "package": info[1], "version": version, "serial": serial, "can_open": can_open_app(serial, info[1]), "is_updated": False }
+  print(out)
+  return out
 
 
 
@@ -60,15 +98,12 @@ def get_apps(serial):
   out = {}
   apps = filter(lambda x: x != "", raw)
   apps = list(map(lambda x: process_app(serial, x, count), enumerate(apps)))
+  last_report = load_report("report.json")
   for app in apps:
-    out[app["package"]] = { "apk": app["apk"], "package": app["package"], "version": app["version"] }
+    if last_report[serial]['apps'][app['package']]['version'] != app["version"]:
+      app['is_updated'] = True
+    out[app["package"]] = app
   return out
-
-
-
-def update_progress(percent, msg=None):
-
-  app.queueFunction(app.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
 
 
 
@@ -117,20 +152,40 @@ def get_devices():
   raw = list(map(lambda x: x.split("\t")[0], raw))
   return raw
 
+
+
 def open_app(serial, package):
   raw = execute(f'adb -s {serial} shell monkey -p {package} 1'.split(" "))
+  return "No activities found to run" in raw
 
-# adb shell monkey -p your.app.package.name 1
+def can_open_app(serial, package):
+  filename = "open_blacklist.json"
+  open_blacklist = load_report(filename) or []
+  if package in open_blacklist:
+    return False
+  else:
+    raw = execute(f'adb -s {serial} shell monkey -p {package} 0'.split(" "))
+    if "No activities found to run" in raw:
+      open_blacklist.append(package)
+      save_report(filename, open_blacklist)
+      return False
+    else:
+      return True
 
 
-def dummy_report(lol):
-  serial = "dummy"
-  report = {}
-  report[serial] = {}
-  last_report = load_report("report.json")
-  print(last_report)
-  for app_i, app in enumerate(last_report[serial]['apps']):
-    add_app_entry(last_report[serial]['apps'][app], app_i)
+# def dummy_report(lol):
+#   serial = "dummy"
+#   report = {}
+#   report[serial] = {}
+#   last_report = load_report("report.json")
+#   print(last_report)
+#   for app_i, app in enumerate(last_report[serial]['apps']):
+#     adds_report_entry(last_report[serial]['apps'][app], app_i)
+
+
+def clean_string(s):
+  return re.sub("[^a-zA-Z0-9.-_/]", "", s)
+
 
 
 def gen_report(ip):
@@ -138,61 +193,118 @@ def gen_report(ip):
   devices = get_devices()
   report = {}
   for device in devices:
-    if not(is_device_awake(device)):
-      print("DEVICE IS OFF, POWERING ON...")
-      send_key_event(device, 26)
-      attempts = 10
-      while not(is_device_awake(device)) and (attempts > 0):
-        attempts -= 1
-        time.sleep(1)
-        status = get_device_awake_state(device)
-      if is_device_awake(device):
-        print("DEVICE IS ON")
+    if not DUMMY:
+      if not(is_device_awake(device)):
+        print("DEVICE IS OFF, POWERING ON...")
+        send_key_event(device, 26)
+        attempts = 10
+        while not(is_device_awake(device)) and (attempts > 0):
+          attempts -= 1
+          time.sleep(1)
+          status = get_device_awake_state(device)
+        if is_device_awake(device):
+          print("DEVICE IS ON")
 
-    props = get_device_prop(device)
+      props = get_device_prop(device)
 
-    report[device] = {}
-    count = len(prop_mapping)
-    i = 0
-    for k, v in prop_mapping.items():
-      i += 1
-      report[device][k] = props.get(v, None)
-    update_progress(100, "Done!")
-    report[device]['apps'] = get_apps(device)
-    serial = report[device]['serialno']
-    report[serial] = report.pop(device)
-    out = json.dumps(report, indent=4)
-    # print(out)
-    # last_report = load_report("report.json")
-    # print(last_report)
-    save_report("report.json", out)
+      report[device] = {}
+      count = len(prop_mapping)
+      i = 0
+      for k, v in prop_mapping.items():
+        i += 1
+        report[device][k] = props.get(v, None)
+      #######################################################################################################
+      serial = report[device]['serialno'] ###################################################################
+      report[serial] = report.pop(device) #renaming our primary key to the device serial number (was the IP!)
+      #######################################################################################################
+      report[serial]['apps'] = get_apps(device)
+      save_report("report.json", report)
+    else:
+      report = load_report("report.json")
+      serial = list(report.keys())[0]
+
+    print(report)
+    # the next few lines are dumb as hell, but this is the least stupid way i can think of to achieve
+    # something that would be a single line in any other language... in any other lang, you can pass a
+    # comparison function in order to perform sorts against complex objects (i.e. not a string or a number)
+    # but this was removed in python 3, because reasons. 
+    # 
+    # there might be a way less stupid way of doing this but i have a migraine coming on right now
+    report_order = []
     for app_i, app in enumerate(report[serial]['apps']):
-      print(app)
-      add_app_entry(report[serial]['apps'][app], app_i)
+      if report[serial]['apps'][app]['can_open']:
+        can_open = "1"
+      else:
+        can_open = "X"
+      report_order.append(can_open + app)
+    report_order = sorted(report_order)
 
-def clean_string(s):
-  return re.sub("[^a-zA-Z0-9.-_/]", "", s)
+    # seriously all my wat
+    # maybe i'll do a double take tomorrow.
+
+    for app_i, app in enumerate(report_order):
+      print(f'app is {app}, app_i is {app_i}')
+      add_report_entry(report[serial]['apps'][app[1:]], app_i)
+  update_progress(100, "Done!")
+
+##################################################################################################
+from appJar import gui
 
 
-def add_app_entry(app_data={}, row=0):
+def add_report_entry_text(package, ver, row, column, bg="#fff", fg="#000"):
+  app.setSticky("ew")
+  app.startFrame(f'_frame_[{package}_{ver}]', row=row, column=column)
+  app.setFg(fg)
+  app.setBg(bg)
+
+  app.setSticky("w")
+  app.startFrame(f'_frame_[{package}]_{ver}', row=0, column=0)
+  app.addLabel(f'_[{package}]_{ver}', package)
+  app.stopFrame()
+
+  app.setSticky("e")
+  app.startFrame(f'_frame__{package}_[{ver}]', row=0, column=1)
+  app.addLabel(f'_{package}_[{ver}]', ver)
+  app.stopFrame()
+
+  app.stopFrame()
+
+
+def add_report_entry(app_data={}, row=0):
+  # debug("app_data")
+  serial = app_data["serial"]
   package = clean_string(app_data["package"])
   version = clean_string(app_data["version"])
   apk = clean_string(app_data["apk"])
+  is_updated = app_data["is_updated"]
+  app.setSticky("ew")
   app.openScrollPane("app_report")
   app.setSticky("ew")
-  app.addLabel(str(row)+"nom_"+package, package, row=row, column=0)
-  app.addLabel(str(row)+"ver_"+package, version, row=row, column=1)
-  app.addNamedButton("open" + str(row), "open_"+str(row), None, row=row, column=2)
+  bg = "#fff" if (row % 2 == 0) else "#ccc"
+  fg = "#c22" if is_updated else "#000"
+  add_report_entry_text(package, version, row=row, column=0, bg=bg, fg=fg)
+  if app_data['can_open']:
+    app.addNamedButton("open app", f'{serial} {package}', handle_open_app, row=row, column=1)
+  else:
+    app.addLabel(f'label_{row}', "package contains no activities", row=row, column=1)
   app.stopScrollPane()
+
 
 def threadulate(func):
   app.thread(func)
 
+def handle_open_app(serial_package):
+  [serial, package] = serial_package.split(" ")
+  return open_app(serial, package)
 
-# import the library
-from appJar import gui
 
-app = gui("Betsy's Artisanal Android TV Tools, Yes!", "700x200")
+def update_progress(percent, msg=None):
+  # app.queueFunction(app.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
+  app.setMeter("progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
+
+
+
+app = gui("Betsy's Android TV Tools, Yes!", "1280x1024")
 app.setStretch("column")
 app.setFont(15)
 app.setLocation("CENTER")
@@ -202,20 +314,15 @@ app.setSticky("new")
 
 app.addLabelEntry("ip address", row=0, column=0)
 app.setEntry("ip address", "172.30.7.97")
-# app.addButton("Yoink!", lambda: threadulate(dummy_report(app.getEntry("ip address"))), row=0, column=1)
-app.addButton("Yoink!", lambda: threadulate(gen_report(app.getEntry("ip address"))), row=0, column=1)
-# app.setSticky("news")
-try:
-  app.setSticky("news")
-  app.setStretch("both")
 
-  app.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
+app.addButton("Yoink!", lambda: gen_report(app.getEntry("ip address")), row=0, column=1)
 
-  app.setBg("#beeeef")
-  app.addLabel("--------- APPS --------")
-  app.stopScrollPane()
-except Exception as e:
-  pass # we need a place to put our report, but leaving a container empty throws a warning
+app.setSticky("news")
+app.setStretch("both")
+app.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
+
+app.setBg("#beeeef")
+app.stopScrollPane()
 
 
 app.setSticky("sew")
@@ -229,5 +336,7 @@ try:
   app.go()
 except Exception as e:
   pass
+
+
 
 
