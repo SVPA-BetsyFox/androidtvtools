@@ -1,4 +1,4 @@
-import subprocess, re, time, codecs, sys, json, hashlib, inspect, random, functools
+import os, subprocess, re, time, codecs, sys, json, hashlib, inspect, random, functools
 import urllib.request
 import ssl
 
@@ -35,6 +35,7 @@ prop_mapping = {
 #   return title
 
 
+
 def load_report(filename):
   try:
     f = open(filename, 'r')
@@ -50,6 +51,13 @@ def save_report(filename, report):
   f.write(json.dumps(report))
   f.close()
 
+
+def get_last_version(serial, package):
+  last_report = load_report("report.json")
+  if serial not in last_report:
+    return
+
+
 def debug(msg):
   if DEBUG:
     [frame, filename, lineno, caller, context, index] = inspect.stack()[2]
@@ -62,16 +70,33 @@ def debug(msg):
 
 
 def execute(cmd):
+  whitelist = ['adb', 'connect', 'get_devices']
+  [frame, filename, lineno, caller, context, index] = inspect.stack()[1]
+  if caller not in whitelist:
+    print(f'execute was called from from {caller} on {lineno} '.ljust(74, '=') + '! =====----->')
   debug(cmd)
   out = subprocess.check_output(cmd)
   return out.decode('utf-8')
 
+
 def adb(serial, cmd):
+  print(serial)
+  if serial not in get_devices():
+    connect(**serial.split(":"))
   return execute(f'adb -s {serial} {cmd}'.split(" "))
 
-def connect(serial, port=5555):
-  status = execute(f'adb connect {serial}:{port}'.split(" "))
-  return (not(status.find("unable") > -1))
+def connect(serial, port=5555, max_attempts=3):
+  attempts = 0
+  status = False
+  while not status and attempts < max_attempts:
+    attempts += 1
+    if f'{serial}:{port}' not in get_devices():
+      debug(f'Connecting to {serial}:{port}, attempt #{attempts}/{max_attempts}...')
+      status = (not(execute(f'adb connect {serial}:{port}'.split(" ")).find("unable") > -1))
+    else:
+      status = True
+
+  return status
 
 def get_package_ver(serial, package):
   raw = adb(serial, f'shell dumpsys package {package.strip()} | grep versionName')
@@ -79,13 +104,14 @@ def get_package_ver(serial, package):
 
 
 def process_app(serial, app_data, count):
-  print("called process app for serial " + serial)
+  debug("called process app for serial " + serial)
   i = app_data[0]
   app_data = app_data[1].strip()
   app_data = app_data.replace("package:", "")
   info = app_data.split("=")
   version = get_package_ver(serial, info[1])
   # can_open = random.choice([True, False])
+  # is_updated = 
   out = { "apk": info[0], "package": info[1], "version": version, "serial": serial, "can_open": can_open_app(serial, info[1]), "is_updated": False }
   print(out)
   return out
@@ -93,22 +119,19 @@ def process_app(serial, app_data, count):
 
 
 def get_apps(serial):
-  raw = execute(f'adb -s {serial} shell pm list packages -f'.split(" ")).split("\n")
+  raw = adb(serial, 'shell pm list packages -f').split("\n")
   count = len(raw)
   out = {}
   apps = filter(lambda x: x != "", raw)
   apps = list(map(lambda x: process_app(serial, x, count), enumerate(apps)))
-  last_report = load_report("report.json")
   for app in apps:
-    if last_report[serial]['apps'][app['package']]['version'] != app["version"]:
-      app['is_updated'] = True
     out[app["package"]] = app
   return out
 
 
 
 def get_device_prop(serial):
-  raw = execute(f'adb -s {serial} shell getprop'.split(" "))
+  raw = adb(serial, 'shell getprop')
   raw = raw.split("\n")
   out = {}
   for entry in raw:
@@ -120,7 +143,7 @@ def get_device_prop(serial):
 
 def send_key_event(serial, event_id):
   try:
-    raw = execute(f'adb -s {serial} shell input keyevent {event_id}'.split(" "))
+    raw = adb(serial, f'shell input keyevent {event_id}')
     return True
   except Exception as e:
     print(e)
@@ -134,7 +157,7 @@ def is_device_awake(serial):
 
 
 def get_device_awake_state(serial):
-  raw = execute(['adb', '-s', serial, 'shell', 'dumpsys power | grep -e "mWakefulness=" -e "Display Power"']).strip().split("\n")
+  raw = adb(serial, 'shell dumpsys power | grep -e "mWakefulness=" -e "Display Power"').strip().split("\n")
   out = {}
   for line in raw:
     if line.startswith("Display"):
@@ -150,6 +173,7 @@ def get_devices():
   raw.pop(0)
   raw = list(filter(lambda e: e.strip() != '', raw))
   raw = list(map(lambda x: x.split("\t")[0], raw))
+  print(raw)
   return raw
 
 
@@ -164,7 +188,7 @@ def can_open_app(serial, package):
   if package in open_blacklist:
     return False
   else:
-    raw = execute(f'adb -s {serial} shell monkey -p {package} 0'.split(" "))
+    raw = adb(serial, f'shell monkey -p {package} 0')
     if "No activities found to run" in raw:
       open_blacklist.append(package)
       save_report(filename, open_blacklist)
@@ -189,7 +213,7 @@ def clean_string(s):
 
 
 def gen_report(ip):
-  connect(ip)
+  # connect(ip)
   devices = get_devices()
   report = {}
   for device in devices:
@@ -299,39 +323,54 @@ def handle_open_app(serial_package):
 
 
 def update_progress(percent, msg=None):
-  # app.queueFunction(app.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
-  app.setMeter("progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
+  app.queueFunction(app.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
+  # app.setMeter("progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
 
 
-
-app = gui("Betsy's Android TV Tools, Yes!", "1280x1024")
-app.setStretch("column")
-app.setFont(15)
-app.setLocation("CENTER")
-app.setIcon('./baatty.gif')
-
-app.setSticky("new")
-
-app.addLabelEntry("ip address", row=0, column=0)
-app.setEntry("ip address", "172.30.7.97")
-
-app.addButton("Yoink!", lambda: gen_report(app.getEntry("ip address")), row=0, column=1)
-
-app.setSticky("news")
-app.setStretch("both")
-app.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
-
-app.setBg("#beeeef")
-app.stopScrollPane()
+def _debug():
+  connect("172.30.7.974")
+  print(get_devices())
 
 
-app.setSticky("sew")
-app.addMeter("progress", row=2, colspan=2)
-app.setMeterFill("progress", "blue")
-app.setMeterBg("progress", "black")
-app.setMeterFg("progress", "gold")
+def initialize_ui():
+  global app
+  app = gui("Betsy's Android TV Tools, Yes!", "1280x1024")
+  reset_ui()
+
+def clear_ui():
+  global app
+  app.removeAllWidgets()
+
+def reset_ui():
+  global app
+  clear_ui()
+  app.setStretch("column")
+  app.setFont(15)
+  app.setLocation("CENTER")
+
+  app.setSticky("new")
+
+  app.addLabelEntry("ip address", row=0, column=0)
+  app.setEntry("ip address", "172.30.7.97")
+
+  app.addButton("Yoink!", lambda: gen_report(app.getEntry("ip address")), row=0, column=1)
+  # app.addButton("deeeeebug", lambda: clear_ui(), row=-1, column=2)
+
+  app.setSticky("news")
+  app.setStretch("both")
+  app.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
+
+  app.setBg("#beeeef")
+  app.stopScrollPane()
 
 
+  app.setSticky("sew")
+  app.addMeter("progress", row=2, colspan=2)
+  app.setMeterFill("progress", "blue")
+  app.setMeterBg("progress", "black")
+  app.setMeterFg("progress", "gold")
+
+initialize_ui()
 try:
   app.go()
 except Exception as e:
