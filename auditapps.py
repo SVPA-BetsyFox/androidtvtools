@@ -173,7 +173,6 @@ def get_devices():
   raw.pop(0)
   raw = list(filter(lambda e: e.strip() != '', raw))
   raw = list(map(lambda x: x.split("\t")[0], raw))
-  print(raw)
   return raw
 
 
@@ -219,7 +218,7 @@ def gen_report(ip):
   for device in devices:
     if not DUMMY:
       if not(is_device_awake(device)):
-        print("DEVICE IS OFF, POWERING ON...")
+        print(f'Device {device} is off, powering on...')
         send_key_event(device, 26)
         attempts = 10
         while not(is_device_awake(device)) and (attempts > 0):
@@ -227,7 +226,7 @@ def gen_report(ip):
           time.sleep(1)
           status = get_device_awake_state(device)
         if is_device_awake(device):
-          print("DEVICE IS ON")
+          print(f'Device {device} is on!')
 
       props = get_device_prop(device)
 
