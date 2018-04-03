@@ -5,7 +5,14 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 DEBUG = False
 DUMMY = False
-# DUMMY = True
+
+
+###########################################
+#   GLOBAL STUFF JUST LIKE THE OLD DAYS   #
+###########################################
+DEVICE = {}
+SERIAL = ""
+IP = ""
 
 sys.stdout = codecs.getwriter('utf8')(sys.stdout.buffer)
 
@@ -17,23 +24,6 @@ prop_mapping = {
   'ipaddress': 'dhcp.wlan0.ipaddress',
   'panelsize': 'ro.svp.panel_inch'
 }
-
-
-# def get_app_name(package):
-#   filename = "package_names.json"
-#   names = load_report(filename) or {}
-#   if package in names:
-#     return names[package]
-#   else:
-#     try:
-#       contents = urllib.request.urlopen(f'https://play.google.com/store/apps/details?id={package}').read().decode("utf-8")
-#       title = re.search("<title.*?>(?P<name>.+?) - .+?</title>", contents).group("name")
-#     except Exception as e:
-#       title = False
-#   names[package] = title
-#   save_report(filename, names)
-#   return title
-
 
 
 def load_report(filename):
@@ -50,12 +40,6 @@ def save_report(filename, report):
   f = open(filename, 'w')
   f.write(json.dumps(report))
   f.close()
-
-
-def get_last_version(serial, package):
-  last_report = load_report("report.json")
-  if serial not in last_report:
-    return
 
 
 def debug(msg):
@@ -78,60 +62,54 @@ def execute(cmd):
   out = subprocess.check_output(cmd)
   return out.decode('utf-8')
 
-
-def adb(serial, cmd):
-  print(serial)
-  if serial not in get_devices():
+def adb(ip, cmd):
+  if ip not in get_devices():
     connect(**serial.split(":"))
-  return execute(f'adb -s {serial} {cmd}'.split(" "))
+  return execute(f'adb -s {ip} {cmd}'.split(" "))
 
-def connect(serial, port=5555, max_attempts=3):
+def connect(ip, port=5555, max_attempts=3):
   attempts = 0
   status = False
   while not status and attempts < max_attempts:
     attempts += 1
-    if f'{serial}:{port}' not in get_devices():
-      debug(f'Connecting to {serial}:{port}, attempt #{attempts}/{max_attempts}...')
-      status = (not(execute(f'adb connect {serial}:{port}'.split(" ")).find("unable") > -1))
+    if f'{ip}:{port}' not in get_devices():
+      debug(f'Connecting to {ip}:{port}, attempt #{attempts}/{max_attempts}...')
+      status = (not(execute(f'adb connect {ip}:{port}'.split(" ")).find("unable") > -1))
     else:
       status = True
-
   return status
 
-def get_package_ver(serial, package):
-  raw = adb(serial, f'shell dumpsys package {package.strip()} | grep versionName')
+
+def is_updated(ip, package, version):
+  global SERIAL
+  last_report = load_report("report.json")
+  print(f' WE\'RE COMPARING PACKAGE {package}!')
+  print(f' OLD VER: {version} | NEW VER: {last_report[SERIAL]["apps"][package]["version"]}')
+  if (SERIAL not in last_report) or (version != last_report[SERIAL]["apps"][package]["version"]):
+    return True
+  else:
+    return False
+
+
+def get_package_ver(ip, package):
+  raw = adb(ip, f'shell dumpsys package {package.strip()} | grep versionName')
   return raw[raw.find("=")+1:].strip()
 
 
-def process_app(serial, app_data, count):
-  debug("called process app for serial " + serial)
-  i = app_data[0]
-  app_data = app_data[1].strip()
-  app_data = app_data.replace("package:", "")
-  info = app_data.split("=")
-  version = get_package_ver(serial, info[1])
-  # can_open = random.choice([True, False])
-  # is_updated = 
-  out = { "apk": info[0], "package": info[1], "version": version, "serial": serial, "can_open": can_open_app(serial, info[1]), "is_updated": False }
-  print(out)
-  return out
-
-
-
-def get_apps(serial):
-  raw = adb(serial, 'shell pm list packages -f').split("\n")
+def get_apps(ip):
+  raw = adb(ip, 'shell pm list packages -f').split("\n")
   count = len(raw)
   out = {}
   apps = filter(lambda x: x != "", raw)
-  apps = list(map(lambda x: process_app(serial, x, count), enumerate(apps)))
+  apps = list(map(lambda x: process_app(ip, x, count), enumerate(apps)))
   for app in apps:
     out[app["package"]] = app
   return out
 
 
 
-def get_device_prop(serial):
-  raw = adb(serial, 'shell getprop')
+def get_device_prop(ip):
+  raw = adb(ip, 'shell getprop')
   raw = raw.split("\n")
   out = {}
   for entry in raw:
@@ -141,23 +119,23 @@ def get_device_prop(serial):
   return out
 
 
-def send_key_event(serial, event_id):
+def send_key_event(ip, event_id):
   try:
-    raw = adb(serial, f'shell input keyevent {event_id}')
+    raw = adb(ip, f'shell input keyevent {event_id}')
     return True
   except Exception as e:
     print(e)
     return False
 
 
-def is_device_awake(serial):
-  data = get_device_awake_state(serial)
+def is_device_awake(ip):
+  data = get_device_awake_state(ip)
   out = ((data["display"] == "ON") and (data["wakefulness"] == "Awake"))
   return out
 
 
-def get_device_awake_state(serial):
-  raw = adb(serial, 'shell dumpsys power | grep -e "mWakefulness=" -e "Display Power"').strip().split("\n")
+def get_device_awake_state(ip):
+  raw = adb(ip, 'shell dumpsys power | grep -e "mWakefulness=" -e "Display Power"').strip().split("\n")
   out = {}
   for line in raw:
     if line.startswith("Display"):
@@ -176,18 +154,32 @@ def get_devices():
   return raw
 
 
+def process_app(ip, app_data, count):
+  serial = ip
+  debug("called process app for ip " + ip)
+  i = app_data[0]
+  app_data = app_data[1].strip()
+  app_data = app_data.replace("package:", "")
+  [apk, package] = app_data.split("=")
+  version = get_package_ver(ip, package)
+  updated = is_updated(ip, package, version)
+  out = { "apk": apk, "package": package, "version": version, "can_open": can_open_app(serial, package), "updated": updated }
+  debug(out)
+  return out
 
-def open_app(serial, package):
-  raw = execute(f'adb -s {serial} shell monkey -p {package} 1'.split(" "))
+
+def open_app(ip, package):
+  raw = execute(f'adb -s {ip} shell monkey -p {package} 1'.split(" "))
   return "No activities found to run" in raw
 
-def can_open_app(serial, package):
+
+def can_open_app(ip, package):
   filename = "open_blacklist.json"
   open_blacklist = load_report(filename) or []
   if package in open_blacklist:
     return False
   else:
-    raw = adb(serial, f'shell monkey -p {package} 0')
+    raw = adb(ip, f'shell monkey -p {package} 0')
     if "No activities found to run" in raw:
       open_blacklist.append(package)
       save_report(filename, open_blacklist)
@@ -196,29 +188,23 @@ def can_open_app(serial, package):
       return True
 
 
-# def dummy_report(lol):
-#   serial = "dummy"
-#   report = {}
-#   report[serial] = {}
-#   last_report = load_report("report.json")
-#   print(last_report)
-#   for app_i, app in enumerate(last_report[serial]['apps']):
-#     adds_report_entry(last_report[serial]['apps'][app], app_i)
-
-
 def clean_string(s):
   return re.sub("[^a-zA-Z0-9.-_/]", "", s)
 
-
-
 def gen_report(ip):
-  # connect(ip)
+  global SERIAL, IP, ui
+  ui.setButtonState("Yoink!", "disabled")
+  connect(ip)
   devices = get_devices()
   report = {}
+  if len(devices) < 1:
+    update_progress(0, "FAILED TO CONNECT")
+    ui.setButtonState("Yoink!", "normal")
+    return
   for device in devices:
     if not DUMMY:
       if not(is_device_awake(device)):
-        print(f'Device {device} is off, powering on...')
+        print(f'Device ({device}) is off, powering on...')
         send_key_event(device, 26)
         attempts = 10
         while not(is_device_awake(device)) and (attempts > 0):
@@ -226,8 +212,7 @@ def gen_report(ip):
           time.sleep(1)
           status = get_device_awake_state(device)
         if is_device_awake(device):
-          print(f'Device {device} is on!')
-
+          print(f'Device: ({device}) is on!')
       props = get_device_prop(device)
 
       report[device] = {}
@@ -236,8 +221,12 @@ def gen_report(ip):
       for k, v in prop_mapping.items():
         i += 1
         report[device][k] = props.get(v, None)
-      #######################################################################################################
-      serial = report[device]['serialno'] ###################################################################
+      #############################################################################################
+      serial = report[device]['serialno']
+      SERIAL = serial
+      IP = ip
+
+      ########################################################
       report[serial] = report.pop(device) #renaming our primary key to the device serial number (was the IP!)
       #######################################################################################################
       report[serial]['apps'] = get_apps(device)
@@ -269,109 +258,123 @@ def gen_report(ip):
       print(f'app is {app}, app_i is {app_i}')
       add_report_entry(report[serial]['apps'][app[1:]], app_i)
   update_progress(100, "Done!")
+  ui.setButtonState("Yoink!", "normal")
+
+
+# def dummy_report(ip):
+#   serial = "dummy"
+#   report = {}
+#   report[serial] = {}
+#   last_report = load_report("report.json")
+#   print(last_report)
+#   for APP_i, APP in enumerate(last_report[serial]['apps']):
+#     adds_report_entry(last_report[serial]['apps'][app], app_i)
 
 ##################################################################################################
 from appJar import gui
 
 
 def add_report_entry_text(package, ver, row, column, bg="#fff", fg="#000"):
-  app.setSticky("ew")
-  app.startFrame(f'_frame_[{package}_{ver}]', row=row, column=column)
-  app.setFg(fg)
-  app.setBg(bg)
+  global ui
+  ui.setSticky("ew")
+  ui.startFrame(f'_frame_[{package}_{ver}]', row=row, column=column)
+  ui.setFg(fg)
+  ui.setBg(bg)
 
-  app.setSticky("w")
-  app.startFrame(f'_frame_[{package}]_{ver}', row=0, column=0)
-  app.addLabel(f'_[{package}]_{ver}', package)
-  app.stopFrame()
+  ui.setSticky("w")
+  ui.startFrame(f'_frame_[{package}]_{ver}', row=0, column=0)
+  ui.addLabel(f'_[{package}]_{ver}', package)
+  ui.stopFrame()
 
-  app.setSticky("e")
-  app.startFrame(f'_frame__{package}_[{ver}]', row=0, column=1)
-  app.addLabel(f'_{package}_[{ver}]', ver)
-  app.stopFrame()
+  ui.setSticky("e")
+  ui.startFrame(f'_frame__{package}_[{ver}]', row=0, column=1)
+  ui.addLabel(f'_{package}_[{ver}]', ver)
+  ui.stopFrame()
 
-  app.stopFrame()
+  ui.stopFrame()
 
 
 def add_report_entry(app_data={}, row=0):
-  # debug("app_data")
-  serial = app_data["serial"]
+  global ui
   package = clean_string(app_data["package"])
   version = clean_string(app_data["version"])
   apk = clean_string(app_data["apk"])
-  is_updated = app_data["is_updated"]
-  app.setSticky("ew")
-  app.openScrollPane("app_report")
-  app.setSticky("ew")
-  bg = "#fff" if (row % 2 == 0) else "#ccc"
-  fg = "#c22" if is_updated else "#000"
+  updated = app_data["updated"]
+  ui.setSticky("ew")
+  ui.openScrollPane("app_report")
+  ui.setSticky("ew")
+  bg = "#fff" if updated else "#ccc"
+  fg = "#c22" if updated else "#000"
   add_report_entry_text(package, version, row=row, column=0, bg=bg, fg=fg)
   if app_data['can_open']:
-    app.addNamedButton("open app", f'{serial} {package}', handle_open_app, row=row, column=1)
+    ui.addNamedButton("open app", f'{IP} {package}', handle_open_app, row=row, column=1)
   else:
-    app.addLabel(f'label_{row}', "package contains no activities", row=row, column=1)
-  app.stopScrollPane()
+    ui.addLabel(f'label_{row}', "package contains no activities", row=row, column=1)
+  ui.stopScrollPane()
 
+
+# when passed a job that needs handled in another thread, this will run it in another thread
 
 def threadulate(func):
-  app.thread(func)
+  global ui
+  ui.thread(func)
 
-def handle_open_app(serial_package):
-  [serial, package] = serial_package.split(" ")
-  return open_app(serial, package)
+
+def handle_open_app(ip_package):
+  [ip, package] = ip_package.split(" ")
+  return open_app(ip, package)
 
 
 def update_progress(percent, msg=None):
-  app.queueFunction(app.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
-  # app.setMeter("progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
-
-
-def _debug():
-  connect("172.30.7.974")
-  print(get_devices())
+  global ui
+  ui.queueFunction(ui.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
+  # ui.setMeter("progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
 
 
 def initialize_ui():
-  global app
-  app = gui("Betsy's Android TV Tools, Yes!", "1280x1024")
+  global ui
+  ui = gui("Betsy's Android TV Tools, Yes!", "1280x1024")
   reset_ui()
 
+
 def clear_ui():
-  global app
-  app.removeAllWidgets()
+  global ui
+  ui.removeAllWidgets()
+
 
 def reset_ui():
-  global app
+  global ui
   clear_ui()
-  app.setStretch("column")
-  app.setFont(15)
-  app.setLocation("CENTER")
+  ui.setStretch("column")
+  ui.setFont(15)
+  ui.setLocation("CENTER")
 
-  app.setSticky("new")
+  ui.setSticky("new")
 
-  app.addLabelEntry("ip address", row=0, column=0)
-  app.setEntry("ip address", "172.30.7.97")
+  ui.addLabelEntry("ip address", row=0, column=0)
+  ui.setEntry("ip address", "172.30.7.97")
 
-  app.addButton("Yoink!", lambda: gen_report(app.getEntry("ip address")), row=0, column=1)
-  # app.addButton("deeeeebug", lambda: clear_ui(), row=-1, column=2)
+  ui.addButton("Yoink!", lambda: gen_report(ui.getEntry("ip address")), row=0, column=1)
+  # ui.addButton("deeeeebug", lambda: clear_ui(), row=-1, column=2)
 
-  app.setSticky("news")
-  app.setStretch("both")
-  app.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
+  ui.setSticky("news")
+  ui.setStretch("both")
+  ui.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
 
-  app.setBg("#beeeef")
-  app.stopScrollPane()
+  ui.setBg("#beeeef")
+  ui.stopScrollPane()
 
 
-  app.setSticky("sew")
-  app.addMeter("progress", row=2, colspan=2)
-  app.setMeterFill("progress", "blue")
-  app.setMeterBg("progress", "black")
-  app.setMeterFg("progress", "gold")
+  ui.setSticky("sew")
+  ui.addMeter("progress", row=2, colspan=2)
+  ui.setMeterFill("progress", "blue")
+  ui.setMeterBg("progress", "black")
+  ui.setMeterFg("progress", "gold")
+
 
 initialize_ui()
 try:
-  app.go()
+  ui.go()
 except Exception as e:
   pass
 
