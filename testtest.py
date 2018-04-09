@@ -3,16 +3,12 @@ import urllib.request
 import ssl
 from appJar import gui
 
+#####################################################################################################
+
 jobs = []
 job_id = 0
 total_jobs = 0
 unfinished_jobs = 0
-
-
-def add_log(log):
-  ui.openScrollPane("app_report")
-  ui.addLabel(f'lbl{log}')
-  ui.stopScrollPane()
 
 
 def add_job(func = lambda x: longtask(x), params={}):
@@ -49,35 +45,17 @@ def update_progress():
   ui.setMeter("progress", percent)
 
 
-def start():
+# execute n number of jobs, -1 is default, and any value less than 0 will process *all* jobs in queue, including any added during the process of executing existing jobs
+def process_jobs(n=-1):
   global jobs
-  while jobs:
+  while jobs and n != 0:
+    if n > 0: n -= 1
     job = jobs.pop()
-  # for job in jobs:
-    add_log(f'threadulated {job["id"]}')
+    debug(f'threadulated {job["id"]}')
     threadulate(job)
 
 
-ui = gui("Betsy's Sandbox, Yes!", "1280x1024")
-ui.addButton("Yoink!", start)
-
-ui.startScrollPane("app_report", row=1, colspan=2, rowspan=2)
-
-ui.setBg("#beeeef")
-ui.addLabel(f'Log!')
-
-
-ui.stopScrollPane()
-
-ui.setSticky("sew")
-ui.addMeter("progress", row=2, colspan=2)
-ui.setMeterFill("progress", "blue")
-ui.setMeterBg("progress", "black")
-ui.setMeterFg("progress", "gold")
-
-
-
-for i in range(0,1000):
+for i in range(0,10):
   msg = f'THIS IS THE RESULT OF JOB #{i}'
   add_job(lambda i: longtask(i), msg)
 

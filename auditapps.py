@@ -5,7 +5,9 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 DEBUG = False
 DUMMY = False
+GO_BUTTON = "yoink"
 
+SUBSEQUENT_REPORT = False
 
 ###########################################
 #   GLOBAL STUFF JUST LIKE THE OLD DAYS   #
@@ -63,8 +65,9 @@ def execute(cmd):
   return out.decode('utf-8')
 
 def adb(ip, cmd):
+  print(f'Called adb for ip: "{ip}", command: "{cmd}"')
   if ip not in get_devices():
-    connect(**serial.split(":"))
+    connect(*ip.split(":"))
   return execute(f'adb -s {ip} {cmd}'.split(" "))
 
 def connect(ip, port=5555, max_attempts=3):
@@ -78,6 +81,23 @@ def connect(ip, port=5555, max_attempts=3):
     else:
       status = True
   return status
+
+
+def wake(ip):
+  if not(is_device_awake(ip)):
+    print(f'Device ({ip}) is off, powering on...')
+    send_key_event(ip, 26)
+    attempts = 10
+    while not(is_device_awake(ip)) and (attempts > 0):
+      attempts -= 1
+      time.sleep(1)
+      status = get_device_awake_state(ip)
+    if is_device_awake(ip):
+      print(f'Device: ({ip}) is on!')
+      return True
+  else: # already on!
+    return True
+  return False
 
 
 def is_updated(ip, package, version):
@@ -164,12 +184,16 @@ def process_app(ip, app_data, count):
   version = get_package_ver(ip, package)
   updated = is_updated(ip, package, version)
   out = { "apk": apk, "package": package, "version": version, "can_open": can_open_app(serial, package), "updated": updated }
+  update_progress((i / count) * 100, f'Processing app: {package}... ')
   debug(out)
   return out
 
 
 def open_app(ip, package):
-  raw = execute(f'adb -s {ip} shell monkey -p {package} 1'.split(" "))
+  # raw = execute(f'adb -s {ip} shell monkey -p {package} 1'.split(" "))
+  print(f'CALLED OPEN_APP FOR IP: "{ip}", PACKAGE: "{package}"')
+  print(f'shell monkey -p {package} 1')
+  raw = adb(ip, f'shell monkey -p {package} 1')
   return "No activities found to run" in raw
 
 
@@ -191,28 +215,21 @@ def can_open_app(ip, package):
 def clean_string(s):
   return re.sub("[^a-zA-Z0-9.-_/]", "", s)
 
-def gen_report(ip):
+def gen_report():
   global SERIAL, IP, ui
-  ui.setButtonState("Yoink!", "disabled")
+  ui.setButtonState(GO_BUTTON, "disabled")
+  ip = ui.getEntry("ip address")
+  if SUBSEQUENT_REPORT:
+    reset_ui(ip)
+  print("BLOCKING CLICKS")
   connect(ip)
   devices = get_devices()
   report = {}
   if len(devices) < 1:
     update_progress(0, "FAILED TO CONNECT")
-    ui.setButtonState("Yoink!", "normal")
     return
   for device in devices:
     if not DUMMY:
-      if not(is_device_awake(device)):
-        print(f'Device ({device}) is off, powering on...')
-        send_key_event(device, 26)
-        attempts = 10
-        while not(is_device_awake(device)) and (attempts > 0):
-          attempts -= 1
-          time.sleep(1)
-          status = get_device_awake_state(device)
-        if is_device_awake(device):
-          print(f'Device: ({device}) is on!')
       props = get_device_prop(device)
 
       report[device] = {}
@@ -258,7 +275,6 @@ def gen_report(ip):
       print(f'app is {app}, app_i is {app_i}')
       add_report_entry(report[serial]['apps'][app[1:]], app_i)
   update_progress(100, "Done!")
-  ui.setButtonState("Yoink!", "normal")
 
 
 # def dummy_report(ip):
@@ -303,7 +319,7 @@ def add_report_entry(app_data={}, row=0):
   ui.setSticky("ew")
   ui.openScrollPane("app_report")
   ui.setSticky("ew")
-  bg = "#fff" if updated else "#ccc"
+  bg = "#fff" if (row % 2 == 0) else "#ccc"
   fg = "#c22" if updated else "#000"
   add_report_entry_text(package, version, row=row, column=0, bg=bg, fg=fg)
   if app_data['can_open']:
@@ -315,9 +331,9 @@ def add_report_entry(app_data={}, row=0):
 
 # when passed a job that needs handled in another thread, this will run it in another thread
 
-def threadulate(func):
+def threadulate(func, cb):
   global ui
-  ui.thread(func)
+  ui.threadCallback(func, cb)
 
 
 def handle_open_app(ip_package):
@@ -328,7 +344,7 @@ def handle_open_app(ip_package):
 def update_progress(percent, msg=None):
   global ui
   ui.queueFunction(ui.setMeter, "progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
-  # ui.setMeter("progress", percent, clean_string(msg) + " (" + "%.3g" % round(percent) + "%)")
+
 
 
 def initialize_ui():
@@ -341,20 +357,23 @@ def clear_ui():
   global ui
   ui.removeAllWidgets()
 
+def allow_click(x):
+  print("ALLOWING CLICKS AGAIN LOL")
+  ui.setButtonState(GO_BUTTON, "normal")
 
-def reset_ui():
+def reset_ui(ip="172.30.7.97"):
   global ui
   clear_ui()
   ui.setStretch("column")
   ui.setFont(15)
   ui.setLocation("CENTER")
 
-  ui.setSticky("new")
+  ui.setSticky("news")
 
   ui.addLabelEntry("ip address", row=0, column=0)
-  ui.setEntry("ip address", "172.30.7.97")
+  ui.setEntry("ip address", ip)
 
-  ui.addButton("Yoink!", lambda: gen_report(ui.getEntry("ip address")), row=0, column=1)
+  ui.addButton(GO_BUTTON, lambda: threadulate(gen_report, allow_click), row=0, column=1)
   # ui.addButton("deeeeebug", lambda: clear_ui(), row=-1, column=2)
 
   ui.setSticky("news")
@@ -366,10 +385,14 @@ def reset_ui():
 
 
   ui.setSticky("sew")
-  ui.addMeter("progress", row=2, colspan=2)
+  # ui.addMeter("DUMMYPROGRESSLOL", row=2, colspan=2)
+  ui.setStretch("none")
+  ui.addMeter("progress", row=3, colspan=2)
   ui.setMeterFill("progress", "blue")
   ui.setMeterBg("progress", "black")
   ui.setMeterFg("progress", "gold")
+
+
 
 
 initialize_ui()
